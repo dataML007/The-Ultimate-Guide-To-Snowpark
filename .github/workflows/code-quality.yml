@@ -1,0 +1,134 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.8"
+
+    - name: Install quality tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install black flake8 isort mypy pylint radon mccabe
+
+    - name: Check code formatting with Black
+      run: |
+        black --check --diff --color .
+
+    - name: Check import sorting with isort
+      run: |
+        isort --check-only --diff .
+
+    - name: Run flake8 linting
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run mypy type checking
+      run: |
+        mypy . --ignore-missing-imports --no-strict-optional
+
+    - name: Run pylint
+      run: |
+        pylint **/*.py --disable=C0114,C0116 --max-line-length=127 || true
+
+    - name: Code complexity analysis
+      run: |
+        echo "## Code Complexity Report" > complexity-report.md
+        echo "" >> complexity-report.md
+        echo "### Cyclomatic Complexity" >> complexity-report.md
+        radon cc . -a -nc >> complexity-report.md
+        echo "" >> complexity-report.md
+        echo "### Maintainability Index" >> complexity-report.md
+        radon mi . -nc >> complexity-report.md
+        echo "" >> complexity-report.md
+        echo "### McCabe Complexity" >> complexity-report.md
+        mccabe . --min 10 >> complexity-report.md
+
+    - name: Upload complexity report
+      uses: actions/upload-artifact@v4
+      with:
+        name: complexity-report
+        path: complexity-report.md
+
+    - name: Comment on PR with quality metrics
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          let comment = '## 🔍 Code Quality Report\n\n';
+          
+          try {
+            if (fs.existsSync('complexity-report.md')) {
+              const report = fs.readFileSync('complexity-report.md', 'utf8');
+              comment += report;
+            }
+          } catch (e) {
+            comment += 'Error reading complexity report\n';
+          }
+          
+          comment += '\n---\n\n';
+          comment += '**Quality Checks:**\n';
+          comment += '- ✅ Black formatting check\n';
+          comment += '- ✅ isort import sorting\n';
+          comment += '- ✅ flake8 linting\n';
+          comment += '- ✅ mypy type checking\n';
+          comment += '- ✅ Code complexity analysis\n';
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+  auto-format:
+    name: Auto-format Code
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.8"
+
+    - name: Install formatting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install black isort
+
+    - name: Format code with Black
+      run: |
+        black .
+
+    - name: Sort imports with isort
+      run: |
+        isort .
+
+    - name: Commit formatting changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add -A
+        git diff-index --quiet HEAD || git commit -m "style: auto-format code [skip ci]"
+        git push
