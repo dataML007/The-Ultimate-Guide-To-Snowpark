@@ -1,14 +1,14 @@
 #!/opt/conda/bin/python3
 
 import argparse
+import json
 import logging
 import os
 import sys
 
 from snowflake.snowpark import Session
-from snowflake.snowpark.functions import month, to_date, date_part
 from snowflake.snowpark.exceptions import *
-import json
+from snowflake.snowpark.functions import date_part, month, to_date
 
 # Environment variables below will be automatically populated by Snowflake.
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
@@ -68,7 +68,7 @@ def get_connection_params():
             "token": get_login_token(),
             "warehouse": "COMPUTE_WH",
             "database": SNOWFLAKE_DATABASE,
-            "schema": SNOWFLAKE_SCHEMA
+            "schema": SNOWFLAKE_SCHEMA,
         }
     else:
         return {
@@ -79,7 +79,7 @@ def get_connection_params():
             "role": SNOWFLAKE_ROLE,
             "warehouse": "COMPUTE_WH",
             "database": SNOWFLAKE_DATABASE,
-            "schema": SNOWFLAKE_SCHEMA
+            "schema": SNOWFLAKE_SCHEMA,
         }
 
 
@@ -94,7 +94,6 @@ def run_job():
     args = get_arg_parser().parse_args()
     table = args.table
     column = args.date_column
-
 
     # Start a Snowflake session, run the query and write results to specified table
     with Session.builder.configs(get_connection_params()).create() as session:
@@ -119,8 +118,5 @@ def run_job():
     logger.info("Job finished")
 
 
-
-
 if __name__ == "__main__":
     run_job()
-

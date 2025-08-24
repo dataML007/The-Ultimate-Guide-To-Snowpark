@@ -1,18 +1,23 @@
-####### Import Global Packages 
-from snowflake.snowpark.context import get_active_session
-import streamlit as st
+####### Import Global Packages
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sn
-from scipy import stats
 import pandas as pd
-from snowflake.snowpark.functions import count, col
-from snowflake.snowpark.functions import hour, month, to_date, dayofweek, date_part, mean, stddev, abs
+import seaborn as sn
+import streamlit as st
+from scipy import stats
+from snowflake.ml.modeling.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from snowflake.ml.modeling.linear_model import Lasso, LinearRegression, Ridge
+from snowflake.ml.modeling.metrics import (
+    d2_absolute_error_score,
+    d2_pinball_score,
+    explained_variance_score,
+    mean_absolute_error,
+    mean_absolute_percentage_error,
+    mean_squared_error,
+)
 from snowflake.ml.modeling.model_selection import GridSearchCV
-from snowflake.ml.modeling.linear_model import LinearRegression, Ridge, Lasso
-from snowflake.ml.modeling.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from snowflake.ml.modeling.metrics import mean_squared_error, explained_variance_score, mean_absolute_error, \
-                mean_absolute_percentage_error, d2_absolute_error_score, d2_pinball_score
+from snowflake.snowpark.context import get_active_session
+from snowflake.snowpark.functions import abs, col, count, date_part, dayofweek, hour, mean, month, stddev, to_date
 
 ###### Set page config
 st.set_page_config(layout="wide")
@@ -20,21 +25,27 @@ st.set_page_config(layout="wide")
 ###### Get current session
 session = get_active_session()
 
+
 @st.cache_data()
 def load_data():
     # Load Bike Share data
     snow_df = session.table("SNOWPARK_DEFINITIVE_GUIDE.MY_SCHEMA.BSD_TRAIN")
     return snow_df.to_pandas()
 
+
 dataframe = load_data()
+
 
 def dataset():
     st.subheader("About Dataset")
-    st.markdown("""
+    st.markdown(
+        """
         ### Overview
         Bike sharing systems are a means of renting bicycles where the process of obtaining membership, rental, and bike return is automated via a network of kiosk locations throughout a city. Using these systems, people are able rent a bike from a one location and return it to a different place on an as-needed basis. Currently, there are over 500 bike-sharing programs around the world.
-    """)
-    st.markdown("""
+    """
+    )
+    st.markdown(
+        """
         ### Data Fields
         - datetime - hourly date + timestamp
         - season - 1 = spring, 2 = summer, 3 = fall, 4 = winter
@@ -52,7 +63,8 @@ def dataset():
         - casual - number of non-registered user rentals initiated
         - registered - number of registered user rentals initiated
         - count - number of total rentals (Dependent Variable)
-    """)
+    """
+    )
     st.subheader("Sample Data")
     st.dataframe(dataframe.head(n=50))
 
@@ -68,8 +80,9 @@ def display_shape(dataframe):
 
 def display_data_type_with_count(dataframe):
     st.markdown(""" #### Variable Type Count""")
-    data_type_df = pd.DataFrame(dataframe.dtypes.value_counts()).reset_index().rename(
-        columns={"index": "variableType", 0: "count"})
+    data_type_df = (
+        pd.DataFrame(dataframe.dtypes.value_counts()).reset_index().rename(columns={"index": "variableType", 0: "count"})
+    )
     st.bar_chart(data_type_df, x="variableType", y="count")
 
 
@@ -88,10 +101,10 @@ def display_outlier_analysis(dataframe):
     sn.boxplot(data=dataframe, y="COUNT", x="SEASON", orient="v", ax=axes[0][1])
     sn.boxplot(data=dataframe, y="COUNT", x='"HOUR"', orient="v", ax=axes[1][0])
     sn.boxplot(data=dataframe, y="COUNT", x="WORKINGDAY", orient="v", ax=axes[1][1])
-    axes[0][0].set(ylabel='Count', title="Box Plot On Count")
-    axes[0][1].set(xlabel='Season', ylabel='Count', title="Box Plot On Count Across Season")
-    axes[1][0].set(xlabel='Hour Of The Day', ylabel='Count', title="Box Plot On Count Across Hour Of The Day")
-    axes[1][1].set(xlabel='Working Day', ylabel='Count', title="Box Plot On Count Across Working Day")
+    axes[0][0].set(ylabel="Count", title="Box Plot On Count")
+    axes[0][1].set(xlabel="Season", ylabel="Count", title="Box Plot On Count Across Season")
+    axes[1][0].set(xlabel="Hour Of The Day", ylabel="Count", title="Box Plot On Count Across Hour Of The Day")
+    axes[1][1].set(xlabel="Working Day", ylabel="Count", title="Box Plot On Count Across Working Day")
     st.pyplot(fig=fig)
 
 
@@ -103,7 +116,7 @@ def display_correlation_analysis(dataframe):
     mask[np.tril_indices_from(mask)] = False
     fig, ax = plt.subplots()
     fig.set_size_inches(20, 10)
-    sn.heatmap(corr_matt, mask=mask, vmax=.8, square=True, annot=True)
+    sn.heatmap(corr_matt, mask=mask, vmax=0.8, square=True, annot=True)
     st.pyplot(fig=fig)
     fig, (ax1, ax2, ax3) = plt.subplots(ncols=3)
     fig.set_size_inches(12, 5)
@@ -118,9 +131,9 @@ def display_data_distribution(dataframe):
     fig, axes = plt.subplots(ncols=2, nrows=2)
     fig.set_size_inches(12, 10)
     sn.distplot(dataframe["COUNT"], ax=axes[0][0])
-    stats.probplot(dataframe["COUNT"], dist='norm', fit=True, plot=axes[0][1])
+    stats.probplot(dataframe["COUNT"], dist="norm", fit=True, plot=axes[0][1])
     sn.distplot(np.log(dataframe["COUNT"]), ax=axes[1][0])
-    stats.probplot(np.log1p(dataframe["COUNT"]), dist='norm', fit=True, plot=axes[1][1])
+    stats.probplot(np.log1p(dataframe["COUNT"]), dist="norm", fit=True, plot=axes[1][1])
     st.pyplot(fig=fig)
 
 
@@ -131,30 +144,61 @@ def display_time_period_analysis(dataframe):
     month_aggregated = pd.DataFrame(dataframe.groupby("MONTH")["COUNT"].mean()).reset_index()
     month_sorted = month_aggregated.sort_values(by="COUNT", ascending=False)
     sn.barplot(data=month_sorted, x="MONTH", y="COUNT", ax=ax1)
-    ax1.set(xlabel='Month', ylabel='Avearage Count', title="Average Count By Month")
+    ax1.set(xlabel="Month", ylabel="Avearage Count", title="Average Count By Month")
     hour_aggregated = pd.DataFrame(dataframe.groupby(["HOUR", "SEASON"], sort=True)["COUNT"].mean()).reset_index()
-    sn.pointplot(x=hour_aggregated["HOUR"], y=hour_aggregated["COUNT"], hue=hour_aggregated["SEASON"], data=hour_aggregated,
-                 join=True, ax=ax2)
-    ax2.set(xlabel='Hour Of The Day', ylabel='Users Count',
-            title="Average Users Count By Hour Of The Day Across Season", label='big')
+    sn.pointplot(
+        x=hour_aggregated["HOUR"],
+        y=hour_aggregated["COUNT"],
+        hue=hour_aggregated["SEASON"],
+        data=hour_aggregated,
+        join=True,
+        ax=ax2,
+    )
+    ax2.set(
+        xlabel="Hour Of The Day",
+        ylabel="Users Count",
+        title="Average Users Count By Hour Of The Day Across Season",
+        label="big",
+    )
     hour_aggregated = pd.DataFrame(dataframe.groupby(["HOUR", "WEEKDAY"], sort=True)["COUNT"].mean()).reset_index()
-    sn.pointplot(x=hour_aggregated["HOUR"], y=hour_aggregated["COUNT"], hue=hour_aggregated["WEEKDAY"],
-                 data=hour_aggregated, join=True, ax=ax3)
-    ax3.set(xlabel='Hour Of The Day', ylabel='Users Count',
-            title="Average Users Count By Hour Of The Day Across Weekdays", label='big')
-    hour_transformed = pd.melt(dataframe[["HOUR", "CASUAL", "REGISTERED"]], id_vars=['HOUR'],
-                              value_vars=['CASUAL', 'REGISTERED'])
-    hour_aggregated = pd.DataFrame(
-        hour_transformed.groupby(["HOUR", "variable"], sort=True)["value"].mean()).reset_index()
-    sn.pointplot(x=hour_aggregated["HOUR"], y=hour_aggregated["value"], hue=hour_aggregated["variable"],
-                 hue_order=["CASUAL", "REGISTERED"], data=hour_aggregated, join=True, ax=ax4)
-    ax4.set(xlabel='Hour Of The Day', ylabel='Users Count',
-            title="Average Users Count By Hour Of The Day Across User Type", label='big')
+    sn.pointplot(
+        x=hour_aggregated["HOUR"],
+        y=hour_aggregated["COUNT"],
+        hue=hour_aggregated["WEEKDAY"],
+        data=hour_aggregated,
+        join=True,
+        ax=ax3,
+    )
+    ax3.set(
+        xlabel="Hour Of The Day",
+        ylabel="Users Count",
+        title="Average Users Count By Hour Of The Day Across Weekdays",
+        label="big",
+    )
+    hour_transformed = pd.melt(
+        dataframe[["HOUR", "CASUAL", "REGISTERED"]], id_vars=["HOUR"], value_vars=["CASUAL", "REGISTERED"]
+    )
+    hour_aggregated = pd.DataFrame(hour_transformed.groupby(["HOUR", "variable"], sort=True)["value"].mean()).reset_index()
+    sn.pointplot(
+        x=hour_aggregated["HOUR"],
+        y=hour_aggregated["value"],
+        hue=hour_aggregated["variable"],
+        hue_order=["CASUAL", "REGISTERED"],
+        data=hour_aggregated,
+        join=True,
+        ax=ax4,
+    )
+    ax4.set(
+        xlabel="Hour Of The Day",
+        ylabel="Users Count",
+        title="Average Users Count By Hour Of The Day Across User Type",
+        label="big",
+    )
     st.pyplot(fig=fig)
 
 
 def eda():
-    st.subheader('Exploratory Data Analysis')
+    st.subheader("Exploratory Data Analysis")
     dataframe = session.table("SNOWPARK_DEFINITIVE_GUIDE.MY_SCHEMA.BSD_TRAIN")
     pandas_df = dataframe.to_pandas()
     display_shape(dataframe)
@@ -203,20 +247,20 @@ def feature_engineering():
     st.markdown(""" #### Date Operations""")
     col1, col2, col3 = st.columns(3)
     with col1:
-        hour = st.checkbox('Extract Hour')
+        hour = st.checkbox("Extract Hour")
     with col2:
-        month = st.checkbox('Extract Month')
+        month = st.checkbox("Extract Month")
     with col3:
-        date = st.checkbox('Extract Date')
+        date = st.checkbox("Extract Date")
     col4, col5, col6 = st.columns(3)
     with col4:
-        week_day = st.checkbox('Extract Week Day')
+        week_day = st.checkbox("Extract Week Day")
     with col5:
-        year = st.checkbox('Extract Year')
+        year = st.checkbox("Extract Year")
     st.markdown(""" #### Outliers""")
-    outliers = st.checkbox('Remove Outliers')
+    outliers = st.checkbox("Remove Outliers")
     st.markdown(""" #### Wind Speed""")
-    windspeed = st.checkbox('Fill Zero Wind Speed')
+    windspeed = st.checkbox("Fill Zero Wind Speed")
 
     def click_button():
         operation_list = []
@@ -247,16 +291,12 @@ def get_model_metrics(dataframe, true_column, predicted_column):
         "mae": mean_absolute_error(df=dataframe, y_true_col_names=true_column, y_pred_col_names=predicted_column),
         "mape": mean_absolute_percentage_error(df=dataframe, y_true_col_names=true_column, y_pred_col_names=predicted_column),
         "d2aes": d2_absolute_error_score(df=dataframe, y_true_col_names=true_column, y_pred_col_names=predicted_column),
-        "d2ps": d2_pinball_score(df=dataframe, y_true_col_names=true_column, y_pred_col_names=predicted_column)
+        "d2ps": d2_pinball_score(df=dataframe, y_true_col_names=true_column, y_pred_col_names=predicted_column),
     }
 
 
 def linear_regression(train_df, test_df, feature_list, label_column, output_columns, placeholder):
-    regressor = LinearRegression(
-        input_cols=feature_list,
-        label_cols=label_column,
-        output_cols=output_columns
-    )
+    regressor = LinearRegression(input_cols=feature_list, label_cols=label_column, output_cols=output_columns)
     regressor.fit(train_df)
     result = regressor.predict(test_df)
     placeholder.dataframe(result)
@@ -265,11 +305,7 @@ def linear_regression(train_df, test_df, feature_list, label_column, output_colu
 
 def gradient_boost_regressor(train_df, test_df, feature_list, label_column, output_columns, placeholder):
     regressor = GradientBoostingRegressor(
-        input_cols=feature_list,
-        label_cols=label_column,
-        output_cols=output_columns,
-        n_estimators=4000,
-        alpha=0.01
+        input_cols=feature_list, label_cols=label_column, output_cols=output_columns, n_estimators=4000, alpha=0.01
     )
     regressor.fit(train_df)
     result = regressor.predict(test_df)
@@ -284,11 +320,11 @@ def train_model(models, placeholder):
     my_bar = st.progress(0, text="progress_text")
     total_models = len(models) + 1
     current_model = 1
-    feature_list = [ "HOLIDAY", "WORKINGDAY", "WEEKDAY", "HOUR", "HUMIDITY", "MONTH", "TEMP", "YEAR", "ATEMP", "WINDSPEED"]
-    label_columns = ['COUNT']
-    output_columns = ['PREDICTED_COUNT']
+    feature_list = ["HOLIDAY", "WORKINGDAY", "WEEKDAY", "HOUR", "HUMIDITY", "MONTH", "TEMP", "YEAR", "ATEMP", "WINDSPEED"]
+    label_columns = ["COUNT"]
+    output_columns = ["PREDICTED_COUNT"]
     for model in models:
-        my_bar.progress(current_model/total_models, f"Training {model}...")
+        my_bar.progress(current_model / total_models, f"Training {model}...")
         if model == "Linear Regression":
             metrics.append(linear_regression(train_df, test_df, feature_list, label_columns, output_columns, placeholder))
         elif model == "Ridge":
@@ -296,9 +332,13 @@ def train_model(models, placeholder):
         elif model == "Lasso":
             metrics.append(lasso(train_df, test_df, feature_list, label_columns, output_columns, placeholder))
         elif model == "Random Forest Regressor":
-            metrics.append(random_forest_regressor(train_df, test_df, feature_list, label_columns, output_columns, placeholder))
+            metrics.append(
+                random_forest_regressor(train_df, test_df, feature_list, label_columns, output_columns, placeholder)
+            )
         elif model == "Gradient Boosting Regressor":
-            metrics.append(gradient_boost_regressor(train_df, test_df, feature_list, label_columns, output_columns, placeholder))
+            metrics.append(
+                gradient_boost_regressor(train_df, test_df, feature_list, label_columns, output_columns, placeholder)
+            )
         current_model = current_model + 1
     my_bar.progress(1, f"All Models Trained")
     return metrics
@@ -307,9 +347,7 @@ def train_model(models, placeholder):
 def model_building():
     st.subheader("Model Building")
 
-    options = st.multiselect(
-        'Choose the model to train',
-        ['Linear Regression', 'Gradient Boosting Regressor'])
+    options = st.multiselect("Choose the model to train", ["Linear Regression", "Gradient Boosting Regressor"])
     placeholder = st.empty()
 
     def click_button():
@@ -319,11 +357,10 @@ def model_building():
                 st.markdown(f"#### Model Metrics for {options[i]}")
                 st.json(metrics[i])
         else:
-            st.error('Select atleast one model', icon="🚨")
+            st.error("Select atleast one model", icon="🚨")
 
     st.button("Train Model", type="primary", on_click=click_button)
 
-    
 
 # Display header
 st.header("Bike Ride Share")
@@ -333,7 +370,7 @@ page_names_to_funcs = {
     "About Dataset": dataset,
     "Feature Engineering": feature_engineering,
     "EDA": eda,
-    "Model Building": model_building
+    "Model Building": model_building,
 }
 selected_page = st.sidebar.selectbox("Select", page_names_to_funcs.keys())
 page_names_to_funcs[selected_page]()

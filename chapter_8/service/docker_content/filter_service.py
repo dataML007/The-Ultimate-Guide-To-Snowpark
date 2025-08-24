@@ -1,18 +1,14 @@
 import json
-
-from flask import Flask
-from flask import request
-from flask import make_response
-from flask import render_template
-from snowflake.snowpark import Session
 import logging
 import os
 import sys
 
-SERVICE_HOST = os.getenv('SERVER_HOST', '0.0.0.0')
-SERVICE_PORT = os.getenv('SERVER_PORT', 8080)
-CHARACTER_NAME = os.getenv('CHARACTER_NAME', 'I')
+from flask import Flask, make_response, render_template, request
+from snowflake.snowpark import Session
 
+SERVICE_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
+SERVICE_PORT = os.getenv("SERVER_PORT", 8080)
+CHARACTER_NAME = os.getenv("CHARACTER_NAME", "I")
 
 
 # Environment variables below will be automatically populated by Snowflake.
@@ -27,6 +23,7 @@ SNOWFLAKE_PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
 SNOWFLAKE_ROLE = os.getenv("SNOWFLAKE_ROLE")
 SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE")
 
+
 def get_login_token():
     """
     Read the login token supplied automatically by Snowflake. These tokens
@@ -34,7 +31,6 @@ def get_login_token():
     """
     with open("/snowflake/session/token", "r") as f:
         return f.read()
-
 
 
 def get_connection_params():
@@ -49,7 +45,7 @@ def get_connection_params():
             "token": get_login_token(),
             "warehouse": "COMPUTE_WH",
             "database": SNOWFLAKE_DATABASE,
-            "schema": SNOWFLAKE_SCHEMA
+            "schema": SNOWFLAKE_SCHEMA,
         }
     else:
         return {
@@ -60,7 +56,7 @@ def get_connection_params():
             "role": SNOWFLAKE_ROLE,
             "warehouse": "COMPUTE_WH",
             "database": SNOWFLAKE_DATABASE,
-            "schema": SNOWFLAKE_SCHEMA
+            "schema": SNOWFLAKE_SCHEMA,
         }
 
 
@@ -69,14 +65,12 @@ def get_logger(logger_name):
     logger.setLevel(logging.DEBUG)
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(
-        logging.Formatter(
-            '%(name)s [%(asctime)s] [%(levelname)s] %(message)s'))
+    handler.setFormatter(logging.Formatter("%(name)s [%(asctime)s] [%(levelname)s] %(message)s"))
     logger.addHandler(handler)
     return logger
 
 
-logger = get_logger('filter-service')
+logger = get_logger("filter-service")
 
 app = Flask(__name__)
 
@@ -89,13 +83,13 @@ def readiness_probe():
 @app.post("/filter")
 def udf_calling_function():
     message = request.json
-    logger.debug(f'Received request: {message}')
+    logger.debug(f"Received request: {message}")
 
-    if message is None or not message['data']:
-        logger.info('Received empty message')
+    if message is None or not message["data"]:
+        logger.info("Received empty message")
         return {}
 
-    unique_id = message['data']
+    unique_id = message["data"]
     try:
         with Session.builder.configs(get_connection_params()).create() as session:
             database = session.get_current_database()
@@ -123,18 +117,15 @@ def udf_calling_function():
 
 @app.route("/ui", methods=["GET", "POST"])
 def ui():
-    '''
+    """
     Main handler for providing a web UI.
-    '''
+    """
     if request.method == "POST":
         # getting input in HTML form
         input_text = request.form.get("input")
         # display input and output
-        return render_template("basic_ui.html",
-            echo_input=input_text,
-            echo_reponse=get_filter_response(input_text))
+        return render_template("basic_ui.html", echo_input=input_text, echo_reponse=get_filter_response(input_text))
     return render_template("basic_ui.html")
-
 
 
 def get_filter_response(input_text):
@@ -158,5 +149,5 @@ def get_filter_response(input_text):
     return data  # Assuming the result is a JSON string
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(host=SERVICE_HOST, port=SERVICE_PORT)
